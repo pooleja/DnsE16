@@ -1,0 +1,5 @@
+
+- add host.renew
+	- if no pkh, anyone can renew
+
+- expire records from DNS, when lifetime ends
