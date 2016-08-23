@@ -1,11 +1,13 @@
 
-dns - Dynamic DNS management service
+DnsE16
 ====================================
+
+This project is adapted from Jeff Garzik's 21 playground21 DNS prototype.  See [here for the details](https://github.com/jgarzik/playground21/tree/master/dns): https://github.com/jgarzik/playground21/tree/master/dns
 
 Summary:  Dynamic DNS domain management system
 
 Once connected to your BIND9 DNS servers, this server enables you to
-monetize your domain by selling 
+monetize your domain by selling
 
 	YOUR-NAME-HERE.example.com
 
@@ -263,4 +265,3 @@ Example:
 Register **test2.example.com** for **4** days at address **127.0.0.1**.
 
 	GET /dns/1/simpleRegister?name=test2&domain=example.com&days=4&ip=127.0.0.1
-
