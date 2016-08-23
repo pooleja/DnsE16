@@ -2,7 +2,7 @@
 DnsE16
 ====================================
 
-This project is adapted from Jeff Garzik's 21 playground21 DNS prototype.  See [here for the details:](https://github.com/jgarzik/playground21/tree/master/dns)
+This project is adapted from Jeff Garzik's 21 playground21 DNS prototype.  See [here for the details.](https://github.com/jgarzik/playground21/tree/master/dns)
 
 Summary:  Dynamic DNS domain management system
 
