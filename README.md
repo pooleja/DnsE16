@@ -58,13 +58,13 @@ PING ns1.21 (10.244.113.158) 56(84) bytes of data.
 
 The first thing you will want to do is get the client (free):
 ```
-$ 21 buy http://dns.21:12005/client -o client.py
+$ 21 buy http://dns.21/client -o client.py
 ```
 This will download the client.py file into the current directory.
 
 Next, you can use the client to see if a name is currently available (1,000 satoshis):
 ```
-$ python3 client.py -e http://dns.21:12005/ status mynewname
+$ python3 client.py -e http://dns.21/ status mynewname
 {
   "success": false,
   "message": "Unknown name"
@@ -72,7 +72,7 @@ $ python3 client.py -e http://dns.21:12005/ status mynewname
 ```
 Here you can see that it is an unknown name, so it can now be registered (use the IP address from '21 market status') (10,000 satoshis):
 ```
-$ python3 client.py -e http://dns.21:12005/ register mynewname 10.244.113.158
+$ python3 client.py -e http://dns.21/ register mynewname 10.244.113.158
 Registering with key MMMMMMMMMBBBBBBBBBBBB
 {
   "success": true,
@@ -90,7 +90,7 @@ PING mynewname.21 (10.244.113.158) 56(84) bytes of data.
 
 You can get the status to see how long it will be registered for (1,000 satoshis):
 ```
-$ python3 client.py -e http://dns.21:12005/ status mynewname
+$ python3 client.py -e http://dns.21/ status mynewname
 {
   "hostinfo": {
     "expire_display_date": "Wed Sep 28 19:06:52 2016",
@@ -106,7 +106,7 @@ $ python3 client.py -e http://dns.21:12005/ status mynewname
 
 You can renew it to add more time before it expires (10,000 satoshis):
 ```
-$ python3 client.py -e http://dns.21:12005/ renew mynewname
+$ python3 client.py -e http://dns.21/ renew mynewname
 {
   "hostinfo": {
     "expire_display_date": "Fri Oct 28 19:06:52 2016",
@@ -124,7 +124,7 @@ You can see it went from Sept to Oct expire date above.
 
 You can also delete it if you want to remove it from the DNS system (1,000 satoshis):
 ```
-$ python3 client.py -e http://dns.21:12005/ delete mynewname MMMMMMMMMBBBBBBBBBBBB
+$ python3 client.py -e http://dns.21/ delete mynewname MMMMMMMMMBBBBBBBBBBBB
 {
   "success": true,
   "message": "Record successfully deleted."
