@@ -2,15 +2,12 @@
 import json
 
 
-def httpjson(val):
+def http200(msg):
     """
     Create the result payload from json for a success.
     """
-    body = json.dumps(val, indent=2)
-    return (body, 200, {
-        'Content-length': len(body),
-        'Content-type': 'application/json',
-    })
+    ret = json.dumps({"success": True, "message": msg}, indent=2)
+    return (ret, 200, {'Content-length': len(ret), 'Content-type': 'application/json'})
 
 
 def http400(msg):
@@ -19,7 +16,18 @@ def http400(msg):
     """
     if not msg:
         msg = "Invalid request"
-    return (msg, 400, {'Content-Type': 'text/plain'})
+    ret = json.dumps({"success": False, "message": msg}, indent=2)
+    return (ret, 400, {'Content-length': len(ret), 'Content-Type': 'application/json'})
+
+
+def http403(msg):
+    """
+    Create the result payload for a 403 error.
+    """
+    if not msg:
+        msg = "Not found"
+    ret = json.dumps({"success": False, "message": msg}, indent=2)
+    return (ret, 403, {'Content-length': len(ret), 'Content-Type': 'application/json'})
 
 
 def http404(msg):
@@ -28,7 +36,8 @@ def http404(msg):
     """
     if not msg:
         msg = "Not found"
-    return (msg, 404, {'Content-Type': 'text/plain'})
+    ret = json.dumps({"success": False, "message": msg}, indent=2)
+    return (ret, 404, {'Content-length': len(ret), 'Content-Type': 'application/json'})
 
 
 def http500(msg):
@@ -37,4 +46,5 @@ def http500(msg):
     """
     if not msg:
         msg = "Internal server error"
-    return (msg, 500, {'Content-Type': 'text/plain'})
+    ret = json.dumps({"success": False, "message": msg}, indent=2)
+    return (ret, 500, {'Content-length': len(ret), 'Content-Type': 'application/json'})

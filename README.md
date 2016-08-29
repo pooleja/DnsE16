@@ -39,7 +39,42 @@ Running the server
 
 	$ python3 dns-server.py
 
+## BIND9 KEY Management
+First, create a pub/priv key pair:
+```
+dnssec-keygen -a HMAC-MD5 -b 512 -n USER username.domain.com.
+```
+This command may take a really long time.
 
+Once finished, print the contents of the key to the screen:
+```
+$cat Kusername.domain.com.+157+28221.key
+username.domain.com. IN KEY 0 3 157 B/BWEYHTYWhOsIjZBmg6DGtZ1hLpnkXUvzHCd584b5IO2gSbwYb/fKYP xqGPHnUyQcSWwlIKADZB9s9NNrlX0Q==
+```
+
+Then add it to a new file "/etc/bind/keys.conf":
+```
+key username.domain.com. {
+	algorithm HMAC-MD5;
+	secret "B/BWEYHTYWhOsIjZBmg6DGtZ1hLpnkXUvzHCd584b5IO2gSbwYb/fKYP xqGPHnUyQcSWwlIKADZB9s9NNrlX0Q==";
+};
+```
+
+Then import it inside "/etc/bind/named.conf"
+```
+include "/etc/bind/keys.conf";
+```
+
+Then update the zone to allow updates in the "/etc/bind/named.conf.local" file:
+```
+zone  "domain.com" {
+        type master;
+        file  "domain.com.zone";
+        allow-update {
+                key username.domain.com.;
+        };
+};
+```
 
 API
 ===

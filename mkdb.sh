@@ -1,6 +1,6 @@
 #!/bin/sh
 
-FN=dns.db
+FN=/home/james/dns.db
 
 if [ -f $FN ]
 then
@@ -8,4 +8,3 @@ then
 	exit 1
 fi
 sqlite3 $FN < dns.schema
-

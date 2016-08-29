@@ -2,6 +2,9 @@ CREATE TABLE domains (
 	name		TEXT PRIMARY KEY
 );
 
+-- Start off with just supporting *.21 domains
+INSERT INTO domains (name) VALUES ("21");
+
 CREATE TABLE hosts (
 	name		TEXT NOT NULL,
 	domain		TEXT NOT NULL,
@@ -24,4 +27,3 @@ CREATE TABLE records (
 );
 
 CREATE INDEX record_idx ON records (name, domain);
-

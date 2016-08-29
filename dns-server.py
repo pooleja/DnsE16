@@ -5,31 +5,36 @@ import base58
 import ipaddress
 import subprocess
 import time
-import pprint
-from httputil import httpjson, http400, http404, http500
+import logging
+import os
+import psutil
+import yaml
+from httputil import http200, http400, http403, http404, http500
 
 # import flask web microframework
 from flask import Flask
 from flask import request
-from flask import abort
+from flask import send_from_directory
 
 # import from the 21 Developer Library
-from two1.lib.wallet import Wallet
-from two1.lib.bitserv.flask import Payment
+from two1.wallet import Wallet
+from two1.bitserv.flask import Payment
 
+# Logging
+logger = logging.getLogger('werkzeug')
+
+# Config from file.
 server_config = json.load(open("dns-server.conf"))
-
-USCENT = 2824
 DNS_SERVER1 = server_config["DNS_SERVER1"]
 NSUPDATE_KEYFILE = server_config["NSUPDATE_KEYFILE"]
 NSUPDATE_LOG = server_config["NSUPDATE_LOG"]
 nsupdate_logging = server_config["NSUPDATE_LOGGING"]
 
-pp = pprint.PrettyPrinter(indent=2)
-
 db = srvdb.SrvDb(server_config["DB_PATHNAME"])
 
 app = Flask(__name__)
+app.debug = True
+
 wallet = Wallet()
 payment = Payment(app, wallet)
 
@@ -45,7 +50,16 @@ def valid_name(name):
         return False
     if not name_re.match(name):
         return False
+    if name.count('.') > 1:
+        return False
     return True
+
+
+def is_subdomain(name):
+    """
+    Checks if this is a subdomain.
+    """
+    return name.count('.') > 0
 
 
 def reserved_name(name):
@@ -105,19 +119,6 @@ def nsupdate_exec(name, domain, host_records):
     return True
 
 
-@app.route('/dns/1/domains')
-def get_domains():
-    """
-    Get a list of domains from the db.
-    """
-    try:
-        domains = db.domains()
-    except:
-        abort(500)
-
-    return httpjson(domains)
-
-
 def parse_hosts(name, domain, in_obj):
     """
     Parse the host list and params from input.
@@ -157,305 +158,333 @@ def store_host(name, domain, days, pkh, host_records):
     """
     # Add to database.  Rely on db to filter out dups.
     try:
+        logger.debug("Storing info: {} {} {} {}".format(name, domain, days, pkh))
         db.add_host(name, domain, days, pkh)
         if len(host_records) > 0:
             if not nsupdate_exec(name, domain, host_records):
-                http500("nsupdate failure")
+                return http500("nsupdate failure")
             db.update_records(name, domain, host_records)
     except:
-        return http400("Host addition rejected")
+        return http400("Host addition rejected.  Host may already be registered.")
 
-    return httpjson(True)
+    return http200("Host record successfully stored for 30 days.")
 
 
-def get_price_register_days(days):
+def verify_subdomain_ownership(name, pkh):
     """
-    Calculate the price based on number of days.
+    Verifies the top level domain is owned by the same key for the subdomain that is trying to be registered.
     """
-    if days < 1 or days > 365:
-        return 0
+    index = name.find(".")
+    topDomain = name[index + 1:]
+    hostinfo = db.get_host(topDomain, "21")
 
-    price = int(USCENT / 50) * days
+    if hostinfo is None:
+        raise PermissionError("Please register top level domain first before trying to register a subdomain.")
 
-    return price
+    if hostinfo['pkh'] != pkh:
+        raise PermissionError("Invalid key used to try and register subdomain")
 
 
-def get_price_register(request):
+@app.route('/dns/register', methods=['POST'])
+@payment.required(10000)
+def cmd_host_register_21():
     """
-    Parse the input data and calculate the cost of registering.
+    Perform a simple registration from the client on the *.21 TLD, default to 30 days.
     """
-    try:
-        body = request.data.decode('utf-8')
-        in_obj = json.loads(body)
-        days = int(in_obj['days'])
-    except:
-        return 0
-
-    return get_price_register_days(days)
-
-
-@app.route('/dns/1/host.register', methods=['POST'])
-@payment.required(get_price_register)
-def cmd_host_register():
-    """
-    Register a host from the client.
-    """
-    # Validate JSON body w/ API params
+    # Parse JSON body w/ API params
     try:
         body = request.data.decode('utf-8')
         in_obj = json.loads(body)
     except:
-        return http400("JSON Decode failed")
+        return http400("JSON Decode failed. Check JSON POST data structure on request.")
 
+    # Validate expected fields
     try:
-        if 'name' not in in_obj or 'domain' not in in_obj:
-            return http400("Missing name/domain")
-
         name = in_obj['name']
-        domain = in_obj['domain']
-        pkh = None
-        days = 1
-        if 'pkh' in in_obj:
-            pkh = in_obj['pkh']
-        if 'days' in in_obj:
-            days = int(in_obj['days'])
+        addresses = in_obj['addresses']
+        pkh = in_obj['pkh']
+        domain = "21"
+        days = 30
 
-        if not valid_name(name) or days < 1 or days > 365:
-            return http400("Invalid name/days")
+        # Strip the .21 from the end of the name if the user specified it
+        if name.endswith(".21"):
+            name = name[0:len(name) - 3]
+
+        if not valid_name(name):
+            return http400("Invalid name param: {}".format(name))
+        if days < 1 or days > 365:
+            return http400("Invalid days param: {}".format(days))
         if not db.valid_domain(domain):
-            return http404("Domain not found")
-        if pkh:
-            base58.b58decode_check(pkh)
-            if (len(pkh) < 20) or (len(pkh) > 40):
-                return http400("Invalid pkh")
+            return http404("Domain not found: {}".format(domain))
+
+        # Make sure they own the top domain if they are trying to register a subdomain
+        if is_subdomain(name):
+            verify_subdomain_ownership(name, pkh)
+
+    except Exception as err:
+        logger.error("Failure: {0}".format(err))
+        return http400("Invalid name / ip / pkh supplied")
+
+    # Validate the signature on the message
+    try:
+        validate_sig(body, request.headers.get('X-Bitcoin-Sig'), pkh)
+    except PermissionError as err:
+        logger.error("Failure: {0}".format(err))
+        return http403(err)
+
+    try:
+        # Validate and collect host records
+        host_records = []
+        for address in addresses:
+            ip = ipaddress.ip_address(address)
+            if isinstance(ip, ipaddress.IPv4Address):
+                rec_type = 'A'
+            elif isinstance(ip, ipaddress.IPv6Address):
+                rec_type = 'AAAA'
+            else:
+                return http500("Unable to determine type of IP address provided: {}".format(ip))
+
+            host_rec = (name, domain, rec_type, str(address), 300)
+            host_records.append(host_rec)
     except:
-        return http400("JSON validation exception")
+        return http400("Invalid IP address supplied: {}".format(addresses))
 
     # Check against reserved host name list
     if reserved_name(name):
         return http400("Reserved name.  Name not available for registration.")
-
-    # Validate and collect host records for updating
-    host_records = parse_hosts(name, domain, in_obj)
-    if isinstance(host_records, str):
-        return http400(host_records)
 
     return store_host(name, domain, days, pkh, host_records)
 
 
-def get_price_register_simple(request):
+def validate_sig(body, sig_str, pkh):
     """
-    For a simple register command, calculate the price.
+    Validate the signature on the body of the request - throws exception if not valid.
     """
-    try:
-        name = request.args.get('name')
-        domain = request.args.get('domain')
-        days = int(request.args.get('days'))
-        # ip = request.args.get('ip')
-        # address = ipaddress.ip_address(ip)
-        if (not valid_name(name) or days < 1 or days > 365 or not db.valid_domain(domain)):
-            return 0
-    except:
-        return 0
-
-    return get_price_register_days(days)
-
-
-@app.route('/dns/1/simpleRegister')
-@payment.required(get_price_register_simple)
-def cmd_host_simpleRegister():
-    """
-    Perform a simple registration from the client.
-    """
-    try:
-        name = request.args.get('name')
-        domain = request.args.get('domain')
-        days = int(request.args.get('days'))
-        ip = request.args.get('ip')
-
-        if not valid_name(name) or days < 1 or days > 365:
-            return http400("Invalid name/days")
-        if not db.valid_domain(domain):
-            return http404("Domain not found")
-    except:
-        return http400("Invalid name / domain / days supplied")
-
-    try:
-        address = ipaddress.ip_address(ip)
-    except:
-        return http400("Invalid IP address supplied")
-
-    if isinstance(address, ipaddress.IPv4Address):
-        rec_type = 'A'
-    elif isinstance(address, ipaddress.IPv6Address):
-        rec_type = 'AAAA'
-    else:
-        return http500("bonkers")
-
-    # Check against reserved host name list
-    if reserved_name(name):
-        return http400("Reserved name.  Name not available for registration.")
-
-    # Validate and collect host records
-    host_records = []
-    host_rec = (name, domain, rec_type, str(address), 1000)
-    host_records.append(host_rec)
-
-    return store_host(name, domain, days, None, host_records)
-
-
-@app.route('/dns/1/records.update', methods=['POST'])
-@payment.required(int(USCENT / 5))
-def cmd_host_update():
-    """
-    Verify an existing record ownership and update the record.
-    """
-    # Validate JSON body w/ API params
-    try:
-        body = request.data.decode('utf-8')
-        in_obj = json.loads(body)
-    except:
-        return http400("JSON Decode failed")
-
-    # Validate JSON object basics
-    try:
-        if 'name' not in in_obj or 'domain' not in in_obj or 'hosts' not in in_obj:
-            return http400("Missing name/hosts")
-
-        name = in_obj['name']
-        domain = in_obj['domain']
-        if not valid_name(name):
-            return http400("Invalid name")
-        if not db.valid_domain(domain):
-            return http404("Domain not found")
-    except:
-        return http400("JSON validation exception")
-
-    # Validate and collect host records for updating
-    host_records = parse_hosts(name, domain, in_obj)
-    if isinstance(host_records, str):
-        return http400(host_records)
-
-    # Verify host exists, and is not expired
-    try:
-        hostinfo = db.get_host(name, domain)
-        if hostinfo is None:
-            return http404("Unknown name")
-    except:
-        return http500("DB Exception")
-
     # Check permission to update
-    pkh = hostinfo['pkh']
-    if pkh is None:
-        abort(403)
-    sig_str = request.headers.get('X-Bitcoin-Sig')
+    if (pkh is None):
+        raise PermissionError("pkh not found.")
+
+    # Validate the pkh format
+    base58.b58decode_check(pkh)
+    if (len(pkh) < 20) or (len(pkh) > 40):
+        raise PermissionError("Invalid pkh")
+
     try:
-        if not sig_str or not wallet.verify_bitcoin_message(body, sig_str, pkh):
-            abort(403)
-    except:
-        abort(403)
+        if not sig_str:
+            raise PermissionError("X-Bitcoin-Sig header not found.")
+        if not wallet.verify_bitcoin_message(body, sig_str, pkh):
+            raise PermissionError("X-Bitcoin-Sig header not valid.")
+    except Exception as err:
+        logger.error("Failure: {0}".format(err))
+        raise PermissionError("X-Bitcoin-Sig header validation failed.")
 
-    # Add to database.  Rely on db to filter out dups.
-    try:
-        if not nsupdate_exec(name, domain, host_records):
-            http500("nsupdate failure")
-        db.update_records(name, domain, host_records)
-    except:
-        return http400("DB Exception")
-
-    return httpjson(True)
+    return True
 
 
-@app.route('/dns/1/host.delete', methods=['POST'])
+@app.route('/dns/delete', methods=['POST'])
+@payment.required(1000)
 def cmd_host_delete():
     """
     Validate ownership and delete a host.
     """
-    # Validate JSON body w/ API params
+    # Parse JSON body w/ API params
     try:
         body = request.data.decode('utf-8')
         in_obj = json.loads(body)
-    except:
-        return http400("JSON Decode failed")
+    except Exception as err:
+        logger.error("Failure: {0}".format(err))
+        return http400("JSON Decode failed. Check JSON POST data structure on request.")
 
     # Validate JSON object basics
     try:
-        if 'name' not in in_obj or 'domain' not in in_obj or 'pkh' not in in_obj:
+        if 'name' not in in_obj or 'pkh' not in in_obj:
             return http400("Missing name/pkh")
 
+        domain = "21"
         name = in_obj['name']
-        domain = in_obj['domain']
         pkh = in_obj['pkh']
-        if (not valid_name(name) or (len(pkh) < 10)):
-            return http400("Invalid name")
+
+        if (not valid_name(name)):
+            return http400("Invalid name param: {}".format(name))
+
         if not db.valid_domain(domain):
             return http404("Domain not found")
-    except:
+
+    except Exception as err:
+        logger.error("Failure: {0}".format(err))
         return http400("JSON validation exception")
 
-    # Verify host exists, and is not expired
+    # Verify host exists and pkh matches
     try:
         hostinfo = db.get_host(name, domain)
         if hostinfo is None:
-            return http404("Unknown name")
-    except:
+            return http404("Name parameter not found: {}".format(name))
+
+        # Validate the submitted pkh matches the one in the db
+        if (pkh != hostinfo['pkh']):
+            return http403("pkh does not match existing record.")
+
+    except Exception as err:
+        logger.error("Failure: {0}".format(err))
         return http500("DB Exception - get host")
 
-    # Check permission to update
-    if (hostinfo['pkh'] is None) or (pkh != hostinfo['pkh']):
-        abort(403)
-    sig_str = request.headers.get('X-Bitcoin-Sig')
+    # Validate the signature on the message
     try:
-        if not sig_str or not wallet.verify_bitcoin_message(body, sig_str, pkh):
-            abort(403)
-    except:
-        abort(403)
+        validate_sig(body, request.headers.get('X-Bitcoin-Sig'), pkh)
+    except PermissionError as err:
+        logger.error("Failure: {0}".format(err))
+        return http403(err)
 
     # Remove from database.  Rely on db to filter out dups.
     try:
         if not nsupdate_exec(name, domain, []):
             http500("nsupdate failure")
         db.delete_host(name, domain)
-    except:
+    except Exception as err:
+        logger.error("Failure: {0}".format(err))
         return http400("DB Exception - delete host")
 
-    return httpjson(True)
+    return http200("Record successfully deleted.")
 
 
-@app.route('/')
-def get_info():
+@app.route('/dns/status', methods=['POST'])
+@payment.required(1000)
+def cmd_host_status():
     """
-    Return metadata about the service to the client.
+    Gets the stats of the specified registered name.
     """
-    # API endpoint metadata - export list of services
-    info_obj = [{
-        "name": "dns/1",
-        "website": "https://github.com/jgarzik/playground21/tree/master/dns",
-        "pricing-type": "per-rpc",
-        "pricing": [
-            {
-                "rpc": "domains",
-                "per-req": 0,
-            },
-            {
-                "rpc": "host.register",
-                "per-day": int(USCENT / 50),
-            },
-            {
-                "rpc": "simpleRegister",
-                "per-day": int(USCENT / 50),
-            },
-            {
-                "rpc": "records.update",
-                "per-req": int(USCENT / 5),
-            },
-            {
-                "rpc": "host.delete",
-                "per-req": 0,
-            },
-        ]
-    }]
-    return httpjson(info_obj)
+    # Validate JSON body w/ API params
+    try:
+        body = request.data.decode('utf-8')
+        in_obj = json.loads(body)
+    except:
+        return http400("JSON Decode failed")
+
+    try:
+        if 'name' not in in_obj:
+            return http400("Missing name parameter.")
+
+        name = in_obj['name']
+        if not valid_name(name):
+            return http400("Invalid name")
+    except:
+        return http400("JSON validation exception")
+
+    # Get info about the requested name
+    try:
+        hostinfo = db.get_host(name, "21")
+        if hostinfo is None:
+            return http404("Unknown name")
+    except:
+        return http500("DB Exception")
+
+    # Remove the pkh from return obj.
+    del hostinfo['pkh']
+
+    # Add display dates
+    hostinfo['create_display_date'] = time.ctime(hostinfo['create'])
+    hostinfo['expire_display_date'] = time.ctime(hostinfo['expire'])
+
+    ret = json.dumps({"success": True, "hostinfo": hostinfo}, indent=2)
+    return (ret, 200, {'Content-length': len(ret), 'Content-type': 'application/json'})
+
+
+@app.route('/dns/renew', methods=['POST'])
+@payment.required(10000)
+def cmd_host_update():
+    """
+    Renew the name for +30 days.
+    """
+    # Validate JSON body w/ API params
+    try:
+        body = request.data.decode('utf-8')
+        in_obj = json.loads(body)
+    except:
+        return http400("JSON Decode failed")
+
+    try:
+        if 'name' not in in_obj:
+            return http400("Missing name parameter.")
+
+        name = in_obj['name']
+        if not valid_name(name):
+            return http400("Invalid name")
+    except:
+        return http400("JSON validation exception")
+
+    # Get info about the requested name
+    try:
+        hostinfo = db.get_host(name, "21")
+        if hostinfo is None:
+            return http404("Unknown name")
+    except:
+        return http500("DB Exception")
+
+    # Calculate the expire date for +30 days
+    currentExpire = hostinfo['expire']
+    newExpire = currentExpire + (30 * 24 * 60 * 60)
+    hostinfo['expire'] = newExpire
+    db.update_host_expiration(name, "21", newExpire)
+
+    # Remove the pkh from return obj.
+    del hostinfo['pkh']
+
+    # Add display dates
+    hostinfo['create_display_date'] = time.ctime(hostinfo['create'])
+    hostinfo['expire_display_date'] = time.ctime(hostinfo['expire'])
+
+    ret = json.dumps({"success": True, "hostinfo": hostinfo, "message": "Added 30 days to host expire time."}, indent=2)
+    return (ret, 200, {'Content-length': len(ret), 'Content-type': 'application/json'})
+
+
+@app.route('/client')
+def client():
+    """Provide the client file to any potential users."""
+    return send_from_directory('./', 'dns-client.py')
+
+
+@app.route('/manifest')
+def manifest():
+    """Provide the app manifest to the 21 crawler."""
+    with open('./manifest.yaml', 'r') as f:
+        manifest = yaml.load(f)
+    return json.dumps(manifest)
+
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=12005)
+    import click
+
+    @click.command()
+    @click.option("-d", "--daemon", default=False, is_flag=True, help="Run in daemon mode.")
+    @click.option("-l", "--log", default="ERROR", help="Logging level to use (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+    def run(daemon, log):
+        """
+        Run the server.
+        """
+        # Set logging level
+        numeric_level = getattr(logging, log.upper(), None)
+        if not isinstance(numeric_level, int):
+            raise ValueError('Invalid log level: %s' % log)
+        logging.basicConfig(level=numeric_level)
+
+        if daemon:
+            pid_file = './DnsE16.pid'
+            if os.path.isfile(pid_file):
+                pid = int(open(pid_file).read())
+                os.remove(pid_file)
+                try:
+                    p = psutil.Process(pid)
+                    p.terminate()
+                except:
+                    pass
+            try:
+                p = subprocess.Popen(['python3', 'dns-server.py'])
+                open(pid_file, 'w').write(str(p.pid))
+            except subprocess.CalledProcessError:
+                raise ValueError("error starting dns-server.py daemon")
+        else:
+
+            logger.info("Server running...")
+            app.run(host='::', port=12005)
+
+    run()

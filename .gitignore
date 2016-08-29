@@ -87,3 +87,8 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+dns-server.conf
+dns.db
+*.key
+*.private

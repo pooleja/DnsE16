@@ -1,0 +1,48 @@
+# Swagger definition for the TranscodeE16 Manifest
+swagger: '2.0'
+
+# Metadata
+info:
+  version: "0.0.1"
+  title: DnsE16
+  description: 'Allows DNS registration on the 21 Zerotier network.'
+  termsOfService: https://opensource.org/licenses/MIT
+  contact:
+    email: james@esixteen.co
+    name: eSixteen.co
+    url: https://www.esixteen.co/
+  x-21-usage: 'Use the available API endpoints to register a DNS name with .21 suffix.'
+  x-21-quick-buy: "curl http://10.244.119.122:12005/client -o client.py"
+  x-21-category: utilities
+  x-21-github-profile-url: https://github.com/pooleja
+  x-21-github-project-url: https://github.com/pooleja/DnsE16
+  x-21-keywords: [DNS, name, naming, service, host, register, ip]
+  x-21-total-price:
+     min: 10
+     max: 10000
+host: 10.244.119.122:12005
+schemes:
+   - http
+basePath: /
+x-21-manifest-path: /manifest
+
+# Available paths for the app
+paths:
+  /manifest:
+    get:
+      description: Gets the `manifest` of the application.
+
+      # Expected responses for this operation:
+      responses:
+        # Response code
+        200:
+          description: Successfully found the manifest YAML file and returned it to client.
+  /client:
+    get:
+      description: Gets the `client.py` for using the application.
+
+      # Expected responses for this operation:
+      responses:
+        # Response code
+        200:
+          description: Successfully found the client python file and returned it to client.

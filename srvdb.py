@@ -52,6 +52,16 @@ class SrvDb(object):
 
         return True
 
+    def update_host_expiration(self, name, domain, expire_date):
+        """
+        Sets the expiration date on the specified host.
+        """
+        cursor = self.connection.cursor()
+        query = 'UPDATE hosts SET time_expire=? WHERE name=? AND domain=?'
+        cursor.execute(query, (expire_date, name, domain))
+
+        return True
+
     def get_host(self, name, domain):
         """
         Find a host record from host name and domain that is not expired.
