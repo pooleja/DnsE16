@@ -12,7 +12,7 @@ info:
     name: eSixteen.co
     url: https://www.esixteen.co/
   x-21-usage: 'Use the available API endpoints to register a DNS name with .21 suffix.'
-  x-21-quick-buy: "curl http://10.244.113.158/client -o client.py"
+  x-21-quick-buy: "curl http://[fcce:a977:eec7:c71c:1c43:0000:0000:0001]/client -o client.py"
   x-21-category: utilities
   x-21-github-profile-url: https://github.com/pooleja
   x-21-github-project-url: https://github.com/pooleja/DnsE16
@@ -20,7 +20,7 @@ info:
   x-21-total-price:
      min: 10
      max: 10000
-host: 10.244.113.158
+host: fcce:a977:eec7:c71c:1c43:0000:0000:0001
 schemes:
    - http
 basePath: /

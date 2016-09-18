@@ -477,6 +477,6 @@ if __name__ == '__main__':
         else:
 
             logger.info("Server running...")
-            app.run(host='::', port=12005)
+            app.run(host='::', port=80)
 
     run()
