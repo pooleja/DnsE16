@@ -443,14 +443,6 @@ def client():
     return send_from_directory('./', 'dns-client.py')
 
 
-@app.route('/manifest')
-def manifest():
-    """Provide the app manifest to the 21 crawler."""
-    with open('./manifest.yaml', 'r') as f:
-        manifest = yaml.load(f)
-    return json.dumps(manifest)
-
-
 if __name__ == '__main__':
     import click
 
