@@ -8,7 +8,6 @@ import time
 import logging
 import os
 import psutil
-import yaml
 from httputil import http200, http400, http403, http404, http500
 
 # import flask web microframework
@@ -33,7 +32,7 @@ nsupdate_logging = server_config["NSUPDATE_LOGGING"]
 db = srvdb.SrvDb(server_config["DB_PATHNAME"])
 
 app = Flask(__name__)
-app.debug = True
+# app.debug = True
 
 wallet = Wallet()
 payment = Payment(app, wallet)
