@@ -12,15 +12,16 @@ info:
     name: eSixteen.co
     url: https://www.esixteen.co/
   x-21-usage: 'Use the available API endpoints to register a DNS name with .21 suffix.'
-  x-21-quick-buy: "curl http://[fcce:a977:eec7:c71c:1c43:0000:0000:0001]/client -o client.py"
+  x-21-quick-buy: "curl http://[fcce:a977:eec7:c71c:1c43:0000:0000:0001]:1200/client -o client.py"
   x-21-category: utilities
   x-21-github-profile-url: https://github.com/pooleja
   x-21-github-project-url: https://github.com/pooleja/DnsE16
   x-21-keywords: [DNS, name, naming, service, host, register, ip]
+  x-21-app-image: https://cdn.filepicker.io/api/file/xpq5tK5nSTm5ZuH2B3BW
   x-21-total-price:
      min: 10
      max: 10000
-host: fcce:a977:eec7:c71c:1c43:0000:0000:0001
+host: '[fcce:a977:eec7:c71c:1c43:0000:0000:0001]:1200'
 schemes:
    - http
 basePath: /
@@ -28,15 +29,6 @@ x-21-manifest-path: /manifest
 
 # Available paths for the app
 paths:
-  /manifest:
-    get:
-      description: Gets the `manifest` of the application.
-
-      # Expected responses for this operation:
-      responses:
-        # Response code
-        200:
-          description: Successfully found the manifest YAML file and returned it to client.
   /client:
     get:
       description: Gets the `client.py` for using the application.
